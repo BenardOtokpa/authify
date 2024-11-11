@@ -1,17 +1,23 @@
-const bcrypt =require('bcrypt');
-
+const jwt = require('jsonwebtoken')
 const User = require('./../models/userModel')
 
 
 
 exports.signup = async (req, res) => {
   try {
-    const {email, password} = req.body
+  const newUser = await User.create({
+    name: req.body.name,
+    email: req.body.email,
+    password: req.body.password,
+    passwordComfirm: req.body.passwordComfirm
+  })
 
-  const hashedPassword = await bcrypt.hash(password, 12 )
-  const newUser = await User.create({email, password: hashedPassword})
+  const token = jwt.sign({id: newUser._id}, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRATION
+  })
   res.status(201).json({
     status: 'success',
+    token,
     data:{
         user: newUser
     }
