@@ -3,10 +3,10 @@ const validator = require('validator');
 const bcrypt = require('bcrypt');
 
 const userSchema = new mongoose.Schema({
-    name:{
-        type: String,
-        required: [true, 'Please provide your name']
-    },
+  name: {
+    type: String,
+    required: [true, 'Please provide your name'],
+  },
   email: {
     type: String,
     required: [true, 'Email is required!'],
@@ -18,6 +18,7 @@ const userSchema = new mongoose.Schema({
     type: String,
     minlength: 8,
     required: [true, 'Password is required'],
+    select: false,
   },
   passwordConfirm: {
     type: String,
@@ -31,7 +32,7 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  isVerified: {
+  isMFAEnabled : {
     type: Boolean,
     default: false,
   },
@@ -47,6 +48,13 @@ userSchema.pre('save', async function (next) {
   this.passwordConfirm = undefined;
   next();
 });
+
+userSchema.methods.comparePassword = async function (
+  candidatePassword,
+  userPassword
+) {
+  return await bcrypt.compare(candidatePassword, userPassword);
+};
 
 const User = mongoose.model('User', userSchema);
 

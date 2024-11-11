@@ -1,10 +1,21 @@
+const User = require('../models/userModel');
 
-
-exports.getAllUsers = (req, res) => {
-  res.status(200).json({
-    status: 'Success',
-    message: 'welcome to all Users',
-  });
+exports.getAllUsers = async (req, res, next) => {
+  try {
+    const users = await User.find();
+    res.status(200).json({
+      status: 'Success',
+      result: users.length,
+      data: {
+        users: users,
+      },
+    });
+  } catch (err) {
+    res.status(404).json({
+      status: 'Failed',
+      message: err,
+    });
+  }
 };
 
 exports.createUser = (req, res) => {
