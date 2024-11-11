@@ -9,6 +9,7 @@ const router = express.Router();
 // Route to users data ;
 router.post('/signup', authController.signup);
 router.post('/login', authController.login);
+router.post('/verifyMFA', authController.verifyMFA);
 
 router
   .route('/')

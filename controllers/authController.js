@@ -1,14 +1,26 @@
 const jwt = require('jsonwebtoken');
 const User = require('./../models/userModel');
 const AppError = require('./../utils/appError');
+const speakeasy = require('speakeasy');
 
 const nodemailer = require('nodemailer');
-const sendEmail = require('../utils/email');
 
 const signToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRATION,
   });
+};
+
+// Generate an MFA secret when the user enables MFA
+const generateMfaSecret = () => {
+  return speakeasy.generateSecret({ length: 20 });
+};
+
+// When user enables MFA, store the mfaSecret in the database
+const setupMfaForUser = async (user) => {
+  const mfaSecret = generateMfaSecret();
+  user.mfaSecret = mfaSecret.base32;
+  await user.save();
 };
 
 // Send magic link function
@@ -40,6 +52,15 @@ exports.signup = async (req, res) => {
       passwordConfirm: req.body.passwordConfirm,
     });
 
+    // Generate and store the MFA secret for the user
+    const mfaSecret = generateMfaSecret();
+    console.log('Generated MFA Secret:', mfaSecret.base32); // Debugging MFA secret generation
+    newUser.mfaSecret = mfaSecret.base32;
+
+    // Save the user including the MFA secret
+    await newUser.save();
+    console.log('User saved with MFA secret:', newUser);
+
     const token = signToken({ id: newUser._id });
 
     res.status(201).json({
@@ -52,7 +73,7 @@ exports.signup = async (req, res) => {
   } catch (err) {
     res.status(400).json({
       status: 'fail',
-      message: err,
+      message: err.message || err,
     });
   }
 };
@@ -106,17 +127,30 @@ exports.login = async (req, res, next) => {
 };
 
 exports.verifyMFA = async (req, res, next) => {
-  const { token } = req.body;
+  const { token, id } = req.body;
   try {
-    const user = await User.findById(req.user.id);
+    // Fetch user from DB
+    const user = await User.findById(id);
 
+    if (!user.mfaSecret) {
+      return next(new AppError('MFA setup not found for this user', 400));
+    }
+
+    // Verify MFA token using speakeasy library
     const verified = speakEasy.totp.verify({
       secret: user.mfaSecret,
       encoding: 'base32',
       token,
+      window: 1,
     });
 
+    if (!user) {
+      console.error('User not found');
+      return next(new AppError('User not found', 404));
+    }
+
     if (!verified) {
+      console.error('MFA verification failed');
       return next(new AppError('Invalid MFA code', 401));
     }
 
@@ -127,7 +161,7 @@ exports.verifyMFA = async (req, res, next) => {
       authToken,
     });
   } catch (err) {
-    return next(new AppError('Error verifying MFA', 400));
+    return next(new AppError('Error verifying MFA', 500));
   }
 };
 

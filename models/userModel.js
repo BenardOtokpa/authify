@@ -32,7 +32,7 @@ const userSchema = new mongoose.Schema({
     },
   },
 
-  isMFAEnabled : {
+  isMFAEnabled: {
     type: Boolean,
     default: false,
   },
