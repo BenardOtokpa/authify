@@ -16,13 +16,6 @@ const generateMfaSecret = () => {
   return speakeasy.generateSecret({ length: 20 });
 };
 
-// When user enables MFA, store the mfaSecret in the database
-const setupMfaForUser = async (user) => {
-  const mfaSecret = generateMfaSecret();
-  user.mfaSecret = mfaSecret.base32;
-  await user.save();
-};
-
 // Send magic link function
 const sendMagicLink = async (email, token) => {
   const magicLink = `https://yourapp.com/auth/verify?token=${token}`;
@@ -54,12 +47,12 @@ exports.signup = async (req, res) => {
 
     // Generate and store the MFA secret for the user
     const mfaSecret = generateMfaSecret();
-    console.log('Generated MFA Secret:', mfaSecret.base32); // Debugging MFA secret generation
     newUser.mfaSecret = mfaSecret.base32;
 
-    // Save the user including the MFA secret
+    // Save the user with the MFA secret
     await newUser.save();
-    console.log('User saved with MFA secret:', newUser);
+
+    console.log('User MFA setup:', { mfaSecret: newUser.mfaSecret });
 
     const token = signToken({ id: newUser._id });
 
@@ -96,7 +89,8 @@ exports.login = async (req, res, next) => {
 
     // Magic Link Option
     if (useMagicLink) {
-      const magicToken = signToken({ id: user._id, type: 'magic-link' });
+      const magicToken = signToken(user._id.toString());
+
       await sendMagicLink(user.email, magicToken);
       return res.status(200).json({
         status: 'success',
@@ -132,22 +126,22 @@ exports.verifyMFA = async (req, res, next) => {
     // Fetch user from DB
     const user = await User.findById(id);
 
+    if (!user) {
+      console.error('User not found');
+      return next(new AppError('User not found', 404));
+    }
+
     if (!user.mfaSecret) {
       return next(new AppError('MFA setup not found for this user', 400));
     }
 
     // Verify MFA token using speakeasy library
-    const verified = speakEasy.totp.verify({
+    const verified = speakeasy.totp.verify({
       secret: user.mfaSecret,
       encoding: 'base32',
       token,
       window: 1,
     });
-
-    if (!user) {
-      console.error('User not found');
-      return next(new AppError('User not found', 404));
-    }
 
     if (!verified) {
       console.error('MFA verification failed');
@@ -167,12 +161,20 @@ exports.verifyMFA = async (req, res, next) => {
 
 exports.verifyMagicLink = async (req, res, next) => {
   const { token } = req.body;
+  console.log('Token received:', token);
+
+  // Verify token using JWT
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (decoded.type !== 'magic-link') {
-      return next(new AppError('Invalid Magic link', 400));
-    }
+    console.log('Decoded token:', decoded);
+    // if (decoded.type !== 'magic-link') {
+    //   return next(new AppError('Invalid Magic link', 400));
+    // }
 
+    const user = await User.findById(decoded.id);
+    if (!user) {
+      return next(new AppError('User not found', 404));
+    }
     // Issue JWT for authenticated session
     const authToken = signToken({ id: decoded.id });
     res.status(200).json({
@@ -180,6 +182,7 @@ exports.verifyMagicLink = async (req, res, next) => {
       authToken,
     });
   } catch (err) {
+    console.error('Error decoding token:', err);
     return next(new AppError('Invalid or expired token', 400));
   }
 };
